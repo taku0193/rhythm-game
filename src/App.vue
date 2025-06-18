@@ -66,18 +66,6 @@ const comboMultiplier = ref(1);
 const comboTimer = ref(null);
 const comboTimeout = 2000; // 2秒でコンボリセット
 
-// === パワーアップアイテム ===
-const powerUps = ref([]);
-const activePowerUps = ref({
-  bigTargets: false,
-  slowMotion: false,
-  autoHit: false
-});
-const powerUpDuration = 10000; // 10秒間
-
-// === 特殊ターゲット ===
-const specialTargetChance = 0.15; // 15%の確率で特殊ターゲット
-
 // === 音楽視覚化 ===
 const audioAnalyser = ref(null);
 const frequencyData = ref(new Uint8Array(64));
@@ -262,9 +250,6 @@ function startGame() {
   spawnTarget();
   targetSpawnTimer = setInterval(spawnTarget, spawnInterval);
   
-  // パワーアップアイテムの生成タイマーを開始（15秒間隔）
-  setInterval(spawnPowerUp, 15000);
-  
   gameTimer = setInterval(() => {
     gameTime.value--;
     if (gameTime.value <= 0) { endGame(); }
@@ -313,31 +298,12 @@ function spawnTarget() {
   const x = Math.random() * (canvas.width - 2 * margin) + margin;
   const y = Math.random() * (canvas.height - 2 * margin) + margin;
   
-  // 特殊ターゲットの判定
-  let targetType = 'normal';
-  let targetColor = '#FF6347';
-  let targetScore = 1;
-  
-  if (Math.random() < specialTargetChance) {
-    const specialTypes = ['golden', 'bomb'];
-    targetType = specialTypes[Math.floor(Math.random() * specialTypes.length)];
-    
-    if (targetType === 'golden') {
-      targetColor = '#FFD700';
-      targetScore = 3; // 3倍のスコア
-    } else if (targetType === 'bomb') {
-      targetColor = '#FF0000';
-      targetScore = -2; // マイナススコア
-    }
-  }
-  
   targets.value.push({
     id: Date.now() + Math.random(), x, y,
     radius: difficultySettings[level.value].targetRadius,
-    color: targetColor,
+    color: '#FF6347',
     hit: false, spawnTime: Date.now(),
-    type: targetType,
-    scoreMultiplier: targetScore
+    lifetime: 3000 // 3秒後に自動削除
   });
   totalTargets.value++;
 }
@@ -355,26 +321,13 @@ function applyTargetHit(target, evaluation) {
   targetsHit.value++;
   if (hitFeedbackTimer) clearTimeout(hitFeedbackTimer);
   
-  // コンボシステムを適用（爆弾以外）
-  if (target.type !== 'bomb') {
-    startCombo();
-  } else {
-    // 爆弾に触れたらコンボリセット
-    resetCombo();
-  }
-  
-  // 基本スコアにコンボ倍率とターゲット倍率を適用
+  // 基本スコアにコンボ倍率を適用
   const baseScore = ({ perfect: 100, good: 50, bad: 10 })[evaluation] || 0;
-  const finalScore = Math.round(baseScore * comboMultiplier.value * target.scoreMultiplier);
+  const finalScore = Math.round(baseScore * comboMultiplier.value);
   score.value += finalScore;
   
   // 特殊ターゲット用の音響効果
   let soundEffect = evaluation;
-  if (target.type === 'golden') {
-    soundEffect = 'perfect'; // 金色ターゲットは完璧な音
-  } else if (target.type === 'bomb') {
-    soundEffect = 'bad'; // 爆弾は悪い音
-  }
   playSound(soundEffect);
   
   const feedback = {
@@ -385,11 +338,6 @@ function applyTargetHit(target, evaluation) {
   
   // 特殊ターゲット用のメッセージ
   let message = feedback.msg;
-  if (target.type === 'golden') {
-    message = 'GOLDEN!';
-  } else if (target.type === 'bomb') {
-    message = 'BOOM!';
-  }
   
   target.color = feedback.color;
   hitFeedbackMessage.value = message;
@@ -409,21 +357,67 @@ async function handleGenerateBgm() {
   errorMessage.value = '';
   bgmUrl.value = '';
   try {
+    console.log('BGM生成リクエストを送信中...');
     const response = await fetch('http://localhost:8000/generate-bgm', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ prompt: musicPrompt.value, duration: 60 }) // 60秒生成
     });
-    if (!response.ok) throw new Error(`サーバーエラー: ${response.statusText}`);
+    
+    console.log('レスポンス受信:', response.status, response.statusText);
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('サーバーエラー詳細:', errorText);
+      throw new Error(`サーバーエラー: ${response.status} ${response.statusText}`);
+    }
+    
     const data = await response.json();
+    console.log('レスポンスデータ:', data);
+    
     if (data.success) {
       bgmUrl.value = data.url;
       currentBpm.value = data.bpm;
+      console.log('BGM URL設定:', bgmUrl.value);
+      
+      // 音声ファイルの存在確認
+      const filename = bgmUrl.value.split('/').pop();
+      try {
+        const checkResponse = await fetch(`http://localhost:8000/check-audio/${filename}`);
+        const checkData = await checkResponse.json();
+        console.log('音声ファイル確認結果:', checkData);
+        if (!checkData.exists) {
+          console.error('音声ファイルが見つかりません:', checkData.path);
+          errorMessage.value = '音声ファイルが見つかりません。';
+        } else {
+          console.log(`音声ファイル確認OK: ${checkData.size} bytes`);
+          // ファイルサイズが小さすぎる場合は警告
+          if (checkData.size < 1000) {
+            console.warn('音声ファイルが小さすぎます:', checkData.size, 'bytes');
+            errorMessage.value = '音声ファイルが小さすぎる可能性があります。';
+          }
+          
+          // WAVファイルの詳細テスト
+          try {
+            const testResponse = await fetch(`http://localhost:8000/test-audio/${filename}`);
+            const testData = await testResponse.json();
+            console.log('WAVファイル詳細テスト:', testData);
+            if (!testData.is_valid_wav) {
+              console.error('WAVファイルが無効です:', testData.header_info);
+              errorMessage.value = 'WAVファイルが無効です。';
+            }
+          } catch (testError) {
+            console.error('WAVファイルテストエラー:', testError);
+          }
+        }
+      } catch (checkError) {
+        console.error('音声ファイル確認エラー:', checkError);
+      }
     } else {
       throw new Error(data.error || 'BGMの生成に失敗しました。');
     }
   } catch (error) {
-    console.error(error);
+    console.error('BGM生成エラー:', error);
     errorMessage.value = error.message;
   } finally {
     isGenerating.value = false;
@@ -431,15 +425,42 @@ async function handleGenerateBgm() {
 }
 watch(bgmUrl, (newUrl) => {
   if (newUrl) {
+    console.log('BGM URL変更検知:', newUrl);
     nextTick(() => {
-      audioPlayerRef.value?.play().catch(e => {
-        console.error("BGMの自動再生に失敗:", e);
-        errorMessage.value = "ブラウザの制約により自動再生できませんでした。再生ボタンを押してください。";
-      });
-      
-      // 音声視覚化を初期化
+      console.log('audioPlayerRef:', audioPlayerRef.value);
       if (audioPlayerRef.value) {
+        console.log('音声再生を試行中...');
+        
+        // 音声要素の準備ができるまで待機
+        const audio = audioPlayerRef.value;
+        
+        // 音声が読み込まれた後に再生を試行
+        const tryPlay = () => {
+          audio.play().then(() => {
+            console.log('音声再生成功');
+            errorMessage.value = '';
+          }).catch(e => {
+            console.error("BGMの自動再生に失敗:", e);
+            if (e.name === 'NotAllowedError') {
+              errorMessage.value = "ブラウザの制約により自動再生できませんでした。再生ボタンを押してください。";
+            } else {
+              errorMessage.value = `音声再生エラー: ${e.message}`;
+            }
+          });
+        };
+        
+        // 音声が準備できている場合は即座に再生、そうでなければイベントを待つ
+        if (audio.readyState >= 2) { // HAVE_CURRENT_DATA
+          tryPlay();
+        } else {
+          audio.addEventListener('canplay', tryPlay, { once: true });
+        }
+        
+        // 音声視覚化を初期化
+        console.log('音声視覚化を初期化中...');
         initAudioVisualization(audioPlayerRef.value);
+      } else {
+        console.error('audioPlayerRefが見つかりません');
       }
     });
   }
@@ -499,66 +520,24 @@ function predictWebcam() {
           canvasCtx.fillText(`x${comboMultiplier.value.toFixed(1)}`, 20, 250);
         }
       }
-      
-      // アクティブなパワーアップを表示
-      const activePowerUpList = Object.entries(activePowerUps.value)
-        .filter(([key, active]) => active)
-        .map(([key]) => key);
-      
-      if (activePowerUpList.length > 0) {
-        canvasCtx.font = "bold 20px Arial";
-        canvasCtx.fillStyle = "#00BFFF";
-        activePowerUpList.forEach((powerUp, index) => {
-          const icon = {
-            bigTargets: '🔍',
-            slowMotion: '⏰',
-            autoHit: '🎯'
-          }[powerUp] || '⭐';
-          canvasCtx.fillText(`${icon} ${powerUp}`, canvas.width - 200, 40 + index * 25);
-        });
-      }
     }
     targets.value.forEach(target => {
-      canvasCtx.beginPath();
+      // 3秒経過したターゲットを自動削除
+      if (!target.hit && Date.now() - target.spawnTime > target.lifetime) {
+        const index = targets.value.findIndex(t => t.id === target.id);
+        if (index > -1) targets.value.splice(index, 1);
+        return; // このターゲットは描画しない
+      }
       
-      // ビート同期の視覚効果
+      canvasCtx.beginPath();
       let radius = target.radius;
       let alpha = 1.0;
-      
-      // パワーアップ効果を適用
-      if (activePowerUps.value.bigTargets) {
-        radius *= 1.5; // ターゲットを1.5倍に拡大
-      }
-      
-      if (currentBpm.value && isBeatPulse.value) {
-        // ビートパルス時にターゲットを大きく、明るくする
-        radius = radius * 1.3;
-        alpha = 1.0;
-      } else if (currentBpm.value) {
-        // 通常時はビートカウンターに応じて透明度を変化
-        const beatProgress = (Date.now() - gameStartTime) % ((60 / currentBpm.value) * 1000);
-        const beatInterval = (60 / currentBpm.value) * 1000;
-        alpha = 0.6 + 0.4 * Math.sin((beatProgress / beatInterval) * Math.PI * 2);
-      }
-      
       canvasCtx.arc(target.x, target.y, radius, 0, 2 * Math.PI);
       canvasCtx.strokeStyle = target.color;
       canvasCtx.globalAlpha = alpha;
       canvasCtx.lineWidth = 5;
       canvasCtx.stroke();
-      canvasCtx.globalAlpha = 1.0; // 透明度をリセット
-      
-      // 特殊ターゲットのアイコンを描画
-      if (target.type !== 'normal') {
-        canvasCtx.font = "bold 24px Arial";
-        canvasCtx.fillStyle = "white";
-        canvasCtx.textAlign = "center";
-        const icon = {
-          golden: '💰',
-          bomb: '💣'
-        }[target.type] || '⭐';
-        canvasCtx.fillText(icon, target.x, target.y + 8);
-      }
+      canvasCtx.globalAlpha = 1.0;
     });
     
     // スペクトラムアナライザーの描画
@@ -579,42 +558,6 @@ function predictWebcam() {
       });
     }
     
-    // ビートラインの描画
-    if (currentBpm.value && isBeatPulse.value) {
-      canvasCtx.strokeStyle = '#FFD700';
-      canvasCtx.lineWidth = 3;
-      canvasCtx.setLineDash([10, 5]);
-      canvasCtx.beginPath();
-      canvasCtx.moveTo(0, canvas.height / 2);
-      canvasCtx.lineTo(canvas.width, canvas.height / 2);
-      canvasCtx.stroke();
-      canvasCtx.setLineDash([]);
-    }
-    
-    // パワーアップアイテムの描画
-    powerUps.value.forEach(powerUp => {
-      if (!powerUp.collected) {
-        canvasCtx.beginPath();
-        canvasCtx.arc(powerUp.x, powerUp.y, powerUp.radius, 0, 2 * Math.PI);
-        canvasCtx.fillStyle = powerUp.color;
-        canvasCtx.fill();
-        canvasCtx.strokeStyle = 'white';
-        canvasCtx.lineWidth = 3;
-        canvasCtx.stroke();
-        
-        // パワーアップアイテムのアイコンを描画
-        canvasCtx.font = "bold 20px Arial";
-        canvasCtx.fillStyle = "white";
-        canvasCtx.textAlign = "center";
-        const icon = {
-          bigTargets: '🔍',
-          slowMotion: '⏰',
-          autoHit: '🎯'
-        }[powerUp.type] || '⭐';
-        canvasCtx.fillText(icon, powerUp.x, powerUp.y + 7);
-      }
-    });
-    
     if (results.landmarks && results.landmarks.length > 0) {
       const wrists = results.landmarks[0].filter((_, i) => i === 15 || i === 16);
       wrists.forEach((wrist, index) => {
@@ -633,29 +576,6 @@ function predictWebcam() {
                 if (evaluation !== 'none') { applyTargetHit(target, evaluation); }
               }
             });
-            
-            // パワーアップアイテムの当たり判定
-            powerUps.value.forEach(powerUp => {
-              if (!powerUp.collected) {
-                const distance = Math.sqrt(Math.pow(powerUp.x - wristX, 2) + Math.pow(powerUp.y - wristY, 2));
-                if (distance <= powerUp.radius + 15) { // 手の半径 + パワーアップの半径
-                  collectPowerUp(powerUp);
-                }
-              }
-            });
-            
-            // 自動ヒット機能
-            if (activePowerUps.value.autoHit) {
-              targets.value.forEach(target => {
-                if (!target.hit) {
-                  const distance = Math.sqrt(Math.pow(target.x - wristX, 2) + Math.pow(target.y - wristY, 2));
-                  if (distance <= target.radius + 50) { // 自動ヒット範囲を広げる
-                    const evaluation = evaluateHit(0, target.spawnTime); // 距離0で評価
-                    if (evaluation !== 'none') { applyTargetHit(target, evaluation); }
-                  }
-                }
-              });
-            }
           }
         }
       });
@@ -739,55 +659,25 @@ function resetCombo() {
   }
 }
 
-// --- パワーアップアイテム ---
-function spawnPowerUp() {
-  if (!isGameActive.value || powerUps.value.length >= 2) return; // 最大2個まで
-  
-  const canvas = canvasRef.value;
-  if (!canvas) return;
-  
-  const margin = 100;
-  const x = Math.random() * (canvas.width - 2 * margin) + margin;
-  const y = Math.random() * (canvas.height - 2 * margin) + margin;
-  
-  const powerUpTypes = ['bigTargets', 'slowMotion', 'autoHit'];
-  const type = powerUpTypes[Math.floor(Math.random() * powerUpTypes.length)];
-  
-  powerUps.value.push({
-    id: Date.now() + Math.random(),
-    x, y, type,
-    radius: 30,
-    color: getPowerUpColor(type),
-    collected: false
-  });
+// --- 音声制御機能 ---
+function playAudio() {
+  if (audioPlayerRef.value) {
+    console.log('手動再生を試行中...');
+    audioPlayerRef.value.play().then(() => {
+      console.log('手動再生成功');
+      errorMessage.value = '';
+    }).catch(e => {
+      console.error('手動再生失敗:', e);
+      errorMessage.value = `手動再生エラー: ${e.message}`;
+    });
+  }
 }
 
-function getPowerUpColor(type) {
-  const colors = {
-    bigTargets: '#FFD700', // 金色
-    slowMotion: '#00BFFF', // 青色
-    autoHit: '#FF1493'     // ピンク色
-  };
-  return colors[type] || '#FFD700';
-}
-
-function collectPowerUp(powerUp) {
-  if (powerUp.collected) return;
-  
-  powerUp.collected = true;
-  activePowerUps.value[powerUp.type] = true;
-  
-  // パワーアップ効果を開始
-  setTimeout(() => {
-    activePowerUps.value[powerUp.type] = false;
-  }, powerUpDuration);
-  
-  // パワーアップアイテムを削除
-  const index = powerUps.value.findIndex(p => p.id === powerUp.id);
-  if (index > -1) powerUps.value.splice(index, 1);
-  
-  // パワーアップ音を再生
-  playSound('levelUp');
+function pauseAudio() {
+  if (audioPlayerRef.value) {
+    console.log('音声停止');
+    audioPlayerRef.value.pause();
+  }
 }
 </script>
 
@@ -817,11 +707,30 @@ function collectPowerUp(powerUp) {
         :src="bgmUrl"
         controls
         loop
+        preload="auto"
+        crossorigin="anonymous"
         ref="audioPlayerRef"
         class="audio-player"
+        @loadstart="() => console.log('音声読み込み開始')"
+        @canplay="() => console.log('音声再生可能')"
+        @canplaythrough="() => console.log('音声完全読み込み完了')"
+        @error="(e) => console.error('音声読み込みエラー:', e)"
+        @loadeddata="() => console.log('音声データ読み込み完了')"
+        @play="() => console.log('音声再生開始')"
+        @pause="() => console.log('音声再生停止')"
+        @ended="() => console.log('音声再生終了')"
+        @stalled="() => console.log('音声読み込み停止')"
+        @suspend="() => console.log('音声読み込み中断')"
+        @abort="() => console.log('音声読み込み中断')"
+        @emptied="() => console.log('音声要素が空になった')"
       >
         お使いのブラウザはaudio要素をサポートしていません。
       </audio>
+      
+      <div v-if="bgmUrl" class="audio-controls">
+        <button @click="playAudio" class="play-button">▶ 再生</button>
+        <button @click="pauseAudio" class="pause-button">⏸ 停止</button>
+      </div>
       
       <p v-if="currentBpm" class="bpm-info">
         🎵 解析されたBPM: <strong>{{ currentBpm }}</strong>
@@ -958,5 +867,8 @@ canvas { position: absolute; top: 0; left: 0; }
 .loading-text, .error-text { font-weight: bold; }
 .error-text { color: var(--error-color); }
 .audio-player { width: 80%; margin-top: 10px; }
+.audio-controls { margin-top: 10px; }
+.play-button, .pause-button { padding: 10px 20px; border: none; border-radius: 4px; background-color: var(--primary-color); color: white; cursor: pointer; transition: background-color 0.3s; margin-left: 10px; }
+.play-button:hover, .pause-button:hover { background-color: #52c993; }
 .bpm-info { margin-top: 10px; font-size: 1.2em; }
 </style>
