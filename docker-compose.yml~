@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  frontend:
+    # カレントディレクトリのDockerfileを使ってビルド
+    build: .
+    # コンテナ名を指定
+    container_name: vue_mediapipe_frontend
+    # ポートのマッピング（ホスト:コンテナ）
+    # ブラウザから localhost:5173 でアクセスできるようになる
+    ports:
+      - "5173:5173"
+    # ボリュームのマッピング
+    # ホストマシンのコード変更がコンテナに即時反映される（ホットリロードのため）
+    volumes:
+      - .:/app
+      - /app/node_modules

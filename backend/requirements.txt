@@ -1,0 +1,21 @@
+# PyTorchの追加ダウンロード場所を指定（標準リポジトリも参照するように --extra を付ける）
+--extra-index-url https://download.pytorch.org/whl/cu121
+
+# PyTorch関連ライブラリ（利用可能な最新安定版に固定）
+torch==2.5.1
+torchvision
+torchaudio
+
+# Hugging Face関連ライブラリ（PyTorch 2.5系と互換性のあるバージョンに固定）
+transformers[sentencepiece]==4.41.2
+accelerate
+
+# 音声処理関連ライブラリ
+soundfile
+librosa
+scipy
+
+# Webフレームワーク関連ライブラリ
+fastapi
+uvicorn[standard]
+python-multipart
