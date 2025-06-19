@@ -20,10 +20,18 @@ const gameTime = ref(60);
 const targetsHit = ref(0);
 const totalTargets = ref(0);
 const targets = ref([]);
+const ripples = ref([]);
 const hitFeedbackMessage = ref('');
 const hitFeedbackColor = ref('');
 const hitFeedbackFontSize = ref(60);
+// 判定エフェクト用のアニメーション状態
+const hitFeedbackScale = ref(1);
+const hitFeedbackAlpha = ref(1);
 let hitFeedbackTimer = null;
+let hitFeedbackAnimTimer = null;
+// スコア・コンボのアニメーション用
+const scoreAnim = ref(false);
+const comboAnim = ref(false);
 const finalScore = ref(0);
 const finalTargetsHit = ref(0);
 const finalTotalTargets = ref(0);
@@ -297,14 +305,39 @@ function spawnTarget() {
   const margin = 100;
   const x = Math.random() * (canvas.width - 2 * margin) + margin;
   const y = Math.random() * (canvas.height - 2 * margin) + margin;
-  
-  targets.value.push({
-    id: Date.now() + Math.random(), x, y,
+  // ノーツの種類をランダムで決定（60%通常, 40%スライド）
+  const rand = Math.random();
+  let type = 'normal';
+  if (rand > 0.6) type = 'slide';
+  let color = '#FF6347'; // 通常:赤
+  if (type === 'slide') color = '#27ae60'; // スライド:緑
+  let target = {
+    id: Date.now() + Math.random(),
+    x, y,
     radius: difficultySettings[level.value].targetRadius,
-    color: '#FF6347',
+    color,
+    type,
     hit: false, spawnTime: Date.now(),
     lifetime: 3000 // 3秒後に自動削除
-  });
+  };
+  if (type === 'slide') {
+    // 終点をランダムに生成（始点から一定距離離す）
+    const angle = Math.random() * 2 * Math.PI;
+    const dist = 120 + Math.random() * 80;
+    const ex = Math.max(margin, Math.min(canvas.width - margin, x + Math.cos(angle) * dist));
+    const ey = Math.max(margin, Math.min(canvas.height - margin, y + Math.sin(angle) * dist));
+    target.ex = ex;
+    target.ey = ey;
+    // 曲線用の制御点（始点と終点の間をランダムにずらす）
+    const cx = (x + ex) / 2 + (Math.random() - 0.5) * 100;
+    const cy = (y + ey) / 2 + (Math.random() - 0.5) * 100;
+    target.cx = cx;
+    target.cy = cy;
+    target.slideStarted = false;
+    target.slideStartTime = null;
+    target.slideTrail = [];
+  }
+  targets.value.push(target);
   totalTargets.value++;
 }
 function evaluateHit(distance, spawnTime) {
@@ -320,6 +353,7 @@ function applyTargetHit(target, evaluation) {
   target.hit = true;
   targetsHit.value++;
   if (hitFeedbackTimer) clearTimeout(hitFeedbackTimer);
+  if (hitFeedbackAnimTimer) clearTimeout(hitFeedbackAnimTimer);
   
   // 基本スコアにコンボ倍率を適用
   const baseScore = ({ perfect: 100, good: 50, bad: 10 })[evaluation] || 0;
@@ -343,11 +377,42 @@ function applyTargetHit(target, evaluation) {
   hitFeedbackMessage.value = message;
   hitFeedbackColor.value = feedback.color;
   hitFeedbackFontSize.value = feedback.size;
-  hitFeedbackTimer = setTimeout(() => { hitFeedbackMessage.value = ''; }, 1000);
+  hitFeedbackScale.value = 1.5;
+  hitFeedbackAlpha.value = 1;
+  // 判定メッセージのアニメーション
+  let animFrame = 0;
+  function animateFeedback() {
+    animFrame++;
+    hitFeedbackScale.value = 1.5 - 0.5 * (animFrame / 20);
+    hitFeedbackAlpha.value = 1 - (animFrame / 30);
+    if (animFrame < 30) {
+      hitFeedbackAnimTimer = setTimeout(animateFeedback, 16);
+    } else {
+      hitFeedbackMessage.value = '';
+      hitFeedbackScale.value = 1;
+      hitFeedbackAlpha.value = 1;
+    }
+  }
+  animateFeedback();
   setTimeout(() => {
     const index = targets.value.findIndex(t => t.id === target.id);
     if (index > -1) targets.value.splice(index, 1);
   }, 500);
+  
+  // 波紋エフェクトを追加
+  ripples.value.push({
+    x: target.x,
+    y: target.y,
+    startTime: Date.now(),
+    color: feedback.color,
+    duration: 600, // 波紋の寿命(ms)
+    maxRadius: target.radius * 2.5
+  });
+  // スコア・コンボのアニメーション
+  scoreAnim.value = true;
+  comboAnim.value = true;
+  setTimeout(() => { scoreAnim.value = false; }, 200);
+  setTimeout(() => { comboAnim.value = false; }, 200);
 }
 
 // --- BGM生成ロジック ---
@@ -496,8 +561,9 @@ function predictWebcam() {
     canvasCtx.restore();
 
     if (isGameActive.value) {
-      canvasCtx.font = "bold 30px Arial";
-      canvasCtx.fillStyle = "white";
+      // スコア表示アニメーション
+      canvasCtx.font = scoreAnim.value ? "bold 38px Arial" : "bold 30px Arial";
+      canvasCtx.fillStyle = scoreAnim.value ? "#FFD700" : "white";
       canvasCtx.textAlign = "left";
       canvasCtx.fillText(`Score: ${score.value}`, 20, 40);
       canvasCtx.fillText(`Level: ${level.value}`, 20, 80);
@@ -513,7 +579,7 @@ function predictWebcam() {
       
       // コンボ情報を表示
       if (comboCount.value > 0) {
-        canvasCtx.font = "bold 28px Arial";
+        canvasCtx.font = comboAnim.value ? "bold 36px Arial" : "bold 28px Arial";
         canvasCtx.fillStyle = comboMultiplier.value > 1 ? "#FFD700" : "#FF6347";
         canvasCtx.fillText(`Combo: ${comboCount.value}`, 20, 220);
         if (comboMultiplier.value > 1) {
@@ -528,16 +594,86 @@ function predictWebcam() {
         if (index > -1) targets.value.splice(index, 1);
         return; // このターゲットは描画しない
       }
-      
-      canvasCtx.beginPath();
+      canvasCtx.save();
       let radius = target.radius;
       let alpha = 1.0;
-      canvasCtx.arc(target.x, target.y, radius, 0, 2 * Math.PI);
-      canvasCtx.strokeStyle = target.color;
-      canvasCtx.globalAlpha = alpha;
-      canvasCtx.lineWidth = 5;
-      canvasCtx.stroke();
+      // ノーツの種類ごとに描画を分岐
+      if (target.type === 'slide') {
+        // 曲線スライドノーツ: 緑色の始点・終点と曲線
+        // 曲線（ベジェ）
+        canvasCtx.beginPath();
+        canvasCtx.moveTo(target.x, target.y);
+        canvasCtx.quadraticCurveTo(target.cx, target.cy, target.ex, target.ey);
+        canvasCtx.strokeStyle = '#27ae60';
+        canvasCtx.lineWidth = 5;
+        canvasCtx.globalAlpha = 0.7;
+        canvasCtx.stroke();
+        // 始点
+        canvasCtx.beginPath();
+        canvasCtx.arc(target.x, target.y, radius, 0, 2 * Math.PI);
+        canvasCtx.strokeStyle = '#27ae60';
+        canvasCtx.lineWidth = 6;
+        canvasCtx.globalAlpha = 1.0;
+        canvasCtx.stroke();
+        canvasCtx.beginPath();
+        canvasCtx.arc(target.x, target.y, radius - 8, 0, 2 * Math.PI);
+        canvasCtx.fillStyle = '#58d68d';
+        canvasCtx.globalAlpha = 0.7;
+        canvasCtx.fill();
+        // 終点
+        canvasCtx.beginPath();
+        canvasCtx.arc(target.ex, target.ey, radius * 0.8, 0, 2 * Math.PI);
+        canvasCtx.strokeStyle = '#229954';
+        canvasCtx.lineWidth = 4;
+        canvasCtx.globalAlpha = 1.0;
+        canvasCtx.stroke();
+        canvasCtx.beginPath();
+        canvasCtx.arc(target.ex, target.ey, radius * 0.6, 0, 2 * Math.PI);
+        canvasCtx.fillStyle = '#82e0aa';
+        canvasCtx.globalAlpha = 0.7;
+        canvasCtx.fill();
+        // 矢印（終点側）
+        const dx = target.ex - target.cx;
+        const dy = target.ey - target.cy;
+        const len = Math.sqrt(dx*dx + dy*dy);
+        if (len > 0) {
+          const ux = dx / len, uy = dy / len;
+          const arrowLen = 18, arrowWidth = 8;
+          const ax = target.ex - ux * (radius * 0.8);
+          const ay = target.ey - uy * (radius * 0.8);
+          canvasCtx.beginPath();
+          canvasCtx.moveTo(ax, ay);
+          canvasCtx.lineTo(ax - uy * arrowWidth - ux * arrowLen, ay + ux * arrowWidth - uy * arrowLen);
+          canvasCtx.lineTo(ax + uy * arrowWidth - ux * arrowLen, ay - ux * arrowWidth - uy * arrowLen);
+          canvasCtx.closePath();
+          canvasCtx.fillStyle = '#229954';
+          canvasCtx.globalAlpha = 1.0;
+          canvasCtx.fill();
+        }
+        // スライド中の軌跡を描画
+        if (target.slideStarted && !target.hit && target.slideTrail && target.slideTrail.length > 1) {
+          canvasCtx.save();
+          canvasCtx.beginPath();
+          canvasCtx.moveTo(target.slideTrail[0].x, target.slideTrail[0].y);
+          for (let i = 1; i < target.slideTrail.length; i++) {
+            canvasCtx.lineTo(target.slideTrail[i].x, target.slideTrail[i].y);
+          }
+          canvasCtx.strokeStyle = 'rgba(46, 204, 113, 0.7)';
+          canvasCtx.lineWidth = 8;
+          canvasCtx.stroke();
+          canvasCtx.restore();
+        }
+      } else {
+        // 通常ノーツ: 赤色の円
+        canvasCtx.beginPath();
+        canvasCtx.arc(target.x, target.y, radius, 0, 2 * Math.PI);
+        canvasCtx.strokeStyle = target.color;
+        canvasCtx.globalAlpha = alpha;
+        canvasCtx.lineWidth = 5;
+        canvasCtx.stroke();
+      }
       canvasCtx.globalAlpha = 1.0;
+      canvasCtx.restore();
     });
     
     // スペクトラムアナライザーの描画
@@ -558,33 +694,84 @@ function predictWebcam() {
       });
     }
     
+    // 波紋エフェクトの描画
+    const now = Date.now();
+    ripples.value = ripples.value.filter(ripple => {
+      const elapsed = now - ripple.startTime;
+      if (elapsed > ripple.duration) return false;
+      const progress = elapsed / ripple.duration;
+      const radius = 20 + (ripple.maxRadius - 20) * progress;
+      const alpha = 0.4 * (1 - progress);
+      canvasCtx.save();
+      canvasCtx.beginPath();
+      canvasCtx.arc(ripple.x, ripple.y, radius, 0, 2 * Math.PI);
+      canvasCtx.strokeStyle = ripple.color;
+      canvasCtx.globalAlpha = alpha;
+      canvasCtx.lineWidth = 6;
+      canvasCtx.stroke();
+      canvasCtx.globalAlpha = 1.0;
+      canvasCtx.restore();
+      return true;
+    });
+    
+    // 判定メッセージのアニメーション描画
+    if (hitFeedbackMessage.value) {
+      canvasCtx.save();
+      canvasCtx.font = `bold ${hitFeedbackFontSize.value * hitFeedbackScale.value}px Arial`;
+      canvasCtx.globalAlpha = hitFeedbackAlpha.value;
+      canvasCtx.fillStyle = hitFeedbackColor.value;
+      canvasCtx.textAlign = "center";
+      canvasCtx.fillText(hitFeedbackMessage.value, canvas.width / 2, canvas.height / 2);
+      canvasCtx.globalAlpha = 1.0;
+      canvasCtx.restore();
+    }
+    
     if (results.landmarks && results.landmarks.length > 0) {
       const wrists = results.landmarks[0].filter((_, i) => i === 15 || i === 16);
       wrists.forEach((wrist, index) => {
         if (wrist.visibility > 0.5) {
           const wristX = (1 - wrist.x) * canvas.width;
           const wristY = wrist.y * canvas.height;
+          // 手首の点を描画
           canvasCtx.beginPath();
           canvasCtx.arc(wristX, wristY, 15, 0, 2 * Math.PI);
           canvasCtx.fillStyle = index === 0 ? 'purple' : 'blue';
           canvasCtx.fill();
-          if (isGameActive.value) {
-            targets.value.forEach(target => {
-              if (!target.hit) {
+          // 判定ロジック
+          targets.value.forEach(target => {
+            if (!target.hit) {
+              if (target.type === 'slide') {
+                if (target.slideStarted && !target.hit) {
+                  if (!target.slideTrail) target.slideTrail = [];
+                  target.slideTrail.push({ x: wristX, y: wristY });
+                  if (target.slideTrail.length > 30) target.slideTrail.shift();
+                  // 終点に到達したか判定
+                  const distEnd = Math.sqrt(Math.pow(target.ex - wristX, 2) + Math.pow(target.ey - wristY, 2));
+                  if (distEnd <= target.radius * 0.8) {
+                    const elapsed = Date.now() - target.slideStartTime;
+                    let evaluation = 'bad';
+                    if (elapsed <= 1000) evaluation = 'perfect';
+                    else if (elapsed <= 2000) evaluation = 'good';
+                    applyTargetHit(target, evaluation);
+                  }
+                } else if (!target.slideStarted) {
+                  // 始点に触れたか
+                  const distStart = Math.sqrt(Math.pow(target.x - wristX, 2) + Math.pow(target.y - wristY, 2));
+                  if (distStart <= target.radius) {
+                    target.slideStarted = true;
+                    target.slideStartTime = Date.now();
+                  }
+                }
+              } else {
+                // 通常ノーツ
                 const distance = Math.sqrt(Math.pow(target.x - wristX, 2) + Math.pow(target.y - wristY, 2));
                 const evaluation = evaluateHit(distance, target.spawnTime);
                 if (evaluation !== 'none') { applyTargetHit(target, evaluation); }
               }
-            });
-          }
+            }
+          });
         }
       });
-    }
-    if (hitFeedbackMessage.value) {
-      canvasCtx.font = `bold ${hitFeedbackFontSize.value}px Arial`;
-      canvasCtx.fillStyle = hitFeedbackColor.value;
-      canvasCtx.textAlign = "center";
-      canvasCtx.fillText(hitFeedbackMessage.value, canvas.width / 2, canvas.height / 2);
     }
   });
   animationId = requestAnimationFrame(predictWebcam);
