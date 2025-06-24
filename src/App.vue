@@ -248,9 +248,9 @@ function startGame() {
       beatCounter.value++;
       isBeatPulse.value = true;
       // ビートパルス時に軽い音響効果を追加
-      if (sounds.value.good) {
-        sounds.value.good();
-      }
+      // if (sounds.value.good) {
+      //   sounds.value.good();
+      // }
       setTimeout(() => { isBeatPulse.value = false; }, 100); // パルス効果を100msで消す
     }, beatInterval);
   }
@@ -530,7 +530,6 @@ watch(bgmUrl, (newUrl) => {
     });
   }
 });
-
 
 // --- 描画ループ ---
 function predictWebcam() {
@@ -849,6 +848,10 @@ function resetCombo() {
 // --- 音声制御機能 ---
 function playAudio() {
   if (audioPlayerRef.value) {
+    // AudioContextがsuspendedならresume
+    if (audioContext.value && audioContext.value.state === "suspended") {
+      audioContext.value.resume();
+    }
     console.log('手動再生を試行中...');
     audioPlayerRef.value.play().then(() => {
       console.log('手動再生成功');
@@ -865,6 +868,10 @@ function pauseAudio() {
     console.log('音声停止');
     audioPlayerRef.value.pause();
   }
+}
+
+function goHome() {
+  window.location.reload();
 }
 </script>
 
@@ -980,7 +987,7 @@ function pauseAudio() {
         <p>総ヒット率: {{ gameStats.totalTargetsSpawned > 0 ? Math.round((gameStats.totalTargetsHit / gameStats.totalTargetsSpawned) * 100) : 0 }}%</p>
       </div>
       
-      <button class="start-button" @click="retryGame">もう一度プレイ</button>
+      <button class="start-button" @click="goHome">ホームに戻る</button>
     </div>
     
     <div class="video-container">
