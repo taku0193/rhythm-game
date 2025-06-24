@@ -877,124 +877,114 @@ function goHome() {
 
 <template>
   <div id="container">
-    <h1>🎯 MediaPipe ターゲットゲーム</h1>
-    
-    <div v-if="isLoading" class="loading">{{ feedbackText }}</div>
-    
-    <div v-if="!isLoading" class="control-panel">
-      <h3>BGM生成 (AI)</h3>
-      <input
-        type="text"
-        v-model="musicPrompt"
-        placeholder="例: 80s pop song with synth"
-        :disabled="isGenerating"
-      />
-      <button @click="handleGenerateBgm" :disabled="isGenerating">
-        {{ isGenerating ? '生成中...' : 'BGMを生成' }}
-      </button>
-      
-      <p v-if="isGenerating" class="loading-text">BGMを生成中です... (数分かかります)</p>
-      <p v-if="errorMessage" class="error-text">{{ errorMessage }}</p>
-
-      <audio
-        v-if="bgmUrl"
-        :src="bgmUrl"
-        controls
-        loop
-        preload="auto"
-        crossorigin="anonymous"
-        ref="audioPlayerRef"
-        class="audio-player"
-        @loadstart="() => console.log('音声読み込み開始')"
-        @canplay="() => console.log('音声再生可能')"
-        @canplaythrough="() => console.log('音声完全読み込み完了')"
-        @error="(e) => console.error('音声読み込みエラー:', e)"
-        @loadeddata="() => console.log('音声データ読み込み完了')"
-        @play="() => console.log('音声再生開始')"
-        @pause="() => console.log('音声再生停止')"
-        @ended="() => console.log('音声再生終了')"
-        @stalled="() => console.log('音声読み込み停止')"
-        @suspend="() => console.log('音声読み込み中断')"
-        @abort="() => console.log('音声読み込み中断')"
-        @emptied="() => console.log('音声要素が空になった')"
-      >
-        お使いのブラウザはaudio要素をサポートしていません。
-      </audio>
-      
-      <div v-if="bgmUrl" class="audio-controls">
-        <button @click="playAudio" class="play-button">▶ 再生</button>
-        <button @click="pauseAudio" class="pause-button">⏸ 停止</button>
-      </div>
-      
-      <p v-if="currentBpm" class="bpm-info">
-        🎵 解析されたBPM: <strong>{{ currentBpm }}</strong>
-      </p>
-    </div>
-    
-    <div v-if="!isLoading && !isGameActive && !showGameResults" class="menu">
-      <h2>レベル選択</h2>
-      <div class="level-buttons">
-        <button 
-          v-for="lvl in 3" 
-          :key="lvl"
-          :class="{ active: level === lvl }"
-          @click="changeLevel(lvl)"
-        >
-          レベル {{ lvl }}
-        </button>
-      </div>
-      <div class="level-info">
-        <h3>レベル {{ level }} の設定</h3>
-        <p>ターゲット数: {{ difficultySettings[level].targetCount }}</p>
-        <p>ターゲットサイズ: {{ difficultySettings[level].targetRadius }}px</p>
-        <p v-if="currentBpm">
-          出現間隔: {{ (calculateBpmBasedInterval(currentBpm) / 1000).toFixed(1) }}秒 (BPM {{ currentBpm }} ベース)
-        </p>
-        <p v-else>
-          出現間隔: {{ difficultySettings[level].spawnInterval / 1000 }}秒 (デフォルト)
-        </p>
-      </div>
-      <button class="start-button" @click="startGame">ゲーム開始</button>
-    </div>
-    
-    <div v-if="showGameResults" class="game-results">
-      <h2>ゲーム結果</h2>
-      <p class="result-message">{{ gameResultText }}</p>
-      <p>最終スコア: <span class="highlight-score">{{ finalScore }}</span></p>
-      <p>ヒットしたターゲット: {{ finalTargetsHit }} / {{ finalTotalTargets }}</p>
-      <p v-if="maxCombo > 0">最大コンボ: <span class="highlight-combo">{{ maxCombo }}</span></p>
-      
-      <!-- ハイスコア表示 -->
-      <div v-if="highScores.length > 0" class="high-scores">
-        <h3>ハイスコア</h3>
-        <div class="score-list">
-          <div v-for="(score, index) in highScores.slice(0, 5)" :key="index" class="score-item">
-            <span class="rank">{{ index + 1 }}</span>
-            <span class="score">{{ score.score }}</span>
-            <span class="level">Lv.{{ score.level }}</span>
-            <span class="combo">{{ score.combo }}combo</span>
-            <span class="date">{{ score.date }}</span>
-          </div>
-        </div>
-      </div>
-      
-      <!-- 統計情報 -->
-      <div class="stats">
-        <h3>統計情報</h3>
-        <p>総ゲーム数: {{ gameStats.totalGames }}</p>
-        <p>平均スコア: {{ gameStats.averageScore }}</p>
-        <p>最高コンボ: {{ gameStats.bestCombo }}</p>
-        <p>総ヒット率: {{ gameStats.totalTargetsSpawned > 0 ? Math.round((gameStats.totalTargetsHit / gameStats.totalTargetsSpawned) * 100) : 0 }}%</p>
-      </div>
-      
-      <button class="start-button" @click="goHome">ホームに戻る</button>
-    </div>
-    
     <div class="video-container">
       <video ref="videoRef" autoplay playsinline></video>
       <canvas ref="canvasRef"></canvas>
+      <!-- BGM用audioは常にDOMに存在し、UIからは非表示 -->
+      <audio
+        :src="bgmUrl"
+        ref="audioPlayerRef"
+        class="hidden-audio"
+        loop
+        preload="auto"
+        crossorigin="anonymous"
+      ></audio>
+      <!-- 重ねるパネル -->
+      <div
+        class="overlay-panel"
+        v-if="!isGameActive && !showGameResults"
+      >
+        <h1>🎯 Rhythm Game</h1>
+        <div v-if="isLoading" class="loading">{{ feedbackText }}</div>
+        <div v-if="!isLoading" class="control-panel">
+          <h3>BGM生成 (AI)</h3>
+          <input
+            type="text"
+            v-model="musicPrompt"
+            placeholder="例: 80s pop song with synth"
+            :disabled="isGenerating"
+          />
+          <button @click="handleGenerateBgm" :disabled="isGenerating">
+            {{ isGenerating ? '生成中...' : 'BGMを生成' }}
+          </button>
+          <p v-if="isGenerating" class="loading-text">BGMを生成中です... (数分かかります)</p>
+          <p v-if="errorMessage" class="error-text">{{ errorMessage }}</p>
+          <div v-if="bgmUrl" class="audio-controls">
+            <button @click="playAudio" class="play-button">▶ 再生</button>
+            <button @click="pauseAudio" class="pause-button">⏸ 停止</button>
+          </div>
+          <p v-if="currentBpm" class="bpm-info">
+            🎵 解析されたBPM: <strong>{{ currentBpm }}</strong>
+          </p>
+        </div>
+        <div v-if="!isLoading && !isGameActive && !showGameResults" class="menu">
+          <h2>レベル選択</h2>
+          <div class="level-buttons">
+            <button 
+              v-for="lvl in 3" 
+              :key="lvl"
+              :class="{ active: level === lvl }"
+              @click="changeLevel(lvl)"
+            >
+              レベル {{ lvl }}
+            </button>
+          </div>
+          <div class="level-info">
+            <h3>レベル {{ level }} の設定</h3>
+            <p>ターゲット数: {{ difficultySettings[level].targetCount }}</p>
+            <p>ターゲットサイズ: {{ difficultySettings[level].targetRadius }}px</p>
+            <p v-if="currentBpm">
+              出現間隔: {{ (calculateBpmBasedInterval(currentBpm) / 1000).toFixed(1) }}秒 (BPM {{ currentBpm }} ベース)
+            </p>
+            <p v-else>
+              出現間隔: {{ difficultySettings[level].spawnInterval / 1000 }}秒 (デフォルト)
+            </p>
+          </div>
+          <button class="start-button" @click="startGame">ゲーム開始</button>
+        </div>
+      </div>
+      <div v-if="showGameResults" class="overlay-panel">
+        <h1>🎯 Rhythm Game</h1>
+        <div class="game-results">
+          <h2>ゲーム結果</h2>
+          <p class="result-message">{{ gameResultText }}</p>
+          <p>最終スコア: <span class="highlight-score">{{ finalScore }}</span></p>
+          <p>ヒットしたターゲット: {{ finalTargetsHit }} / {{ finalTotalTargets }}</p>
+          <p v-if="maxCombo > 0">最大コンボ: <span class="highlight-combo">{{ maxCombo }}</span></p>
+          <div v-if="highScores.length > 0" class="high-scores">
+            <h3>ハイスコア</h3>
+            <table class="score-table">
+              <thead>
+                <tr>
+                  <th>順位</th>
+                  <th>スコア</th>
+                  <th>レベル</th>
+                  <th>コンボ</th>
+                  <th>日付</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="(score, index) in highScores.slice(0, 5)" :key="index">
+                  <td class="rank">{{ index + 1 }}</td>
+                  <td class="score">{{ score.score }}</td>
+                  <td class="level">{{ score.level }}</td>
+                  <td class="combo">{{ score.combo }}</td>
+                  <td class="date">{{ score.date }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="stats">
+            <!-- <h3>統計情報</h3> -->
+            <p>総ゲーム数: {{ gameStats.totalGames }}</p>
+            <p>平均スコア: {{ gameStats.averageScore }}</p>
+            <p>最高コンボ: {{ gameStats.bestCombo }}</p>
+            <p>総ヒット率: {{ gameStats.totalTargetsSpawned > 0 ? Math.round((gameStats.totalTargetsHit / gameStats.totalTargetsSpawned) * 100) : 0 }}%</p>
+          </div>
+          <button class="start-button" @click="goHome">ホームに戻る</button>
+        </div>
+      </div>
     </div>
-    
   </div>
 </template>
 
@@ -1044,7 +1034,13 @@ h1 {
 .level-info { margin: 20px 0; padding: 15px; background-color: rgba(255, 255, 255, 0.1); border-radius: 10px; }
 .level-info h3 { margin-top: 0; }
 .level-info p { margin: 5px 0; }
-.video-container { position: relative; border: 5px solid #42b983; border-radius: 10px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.3); }
+.video-container {
+  position: relative;
+  border: 5px solid #42b983;
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+}
 video { display: block; transform: scaleX(-1); }
 canvas { position: absolute; top: 0; left: 0; }
 .game-results { padding: 30px; box-shadow: 0 10px 30px rgba(0,0,0,0.4); }
@@ -1065,4 +1061,253 @@ canvas { position: absolute; top: 0; left: 0; }
 .play-button, .pause-button { padding: 10px 20px; border: none; border-radius: 4px; background-color: var(--primary-color); color: white; cursor: pointer; transition: background-color 0.3s; margin-left: 10px; }
 .play-button:hover, .pause-button:hover { background-color: #52c993; }
 .bpm-info { margin-top: 10px; font-size: 1.2em; }
+/* CSS追加: overlay-panelを絶対配置で中央上部に重ねる */
+.overlay-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 96%;
+  max-width: 520px;
+  z-index: 10;
+  padding: 24px 12px 24px 12px;
+  pointer-events: auto;
+  background: rgba(255,255,255,0.18);
+  border-radius: 22px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.28);
+  border: 1.5px solid rgba(66,185,131,0.18);
+  color: #fff;
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  overflow-x: auto;
+  overflow-y: auto;
+  word-break: break-word;
+}
+.overlay-panel::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(120deg, rgba(66,185,131,0.18) 0%, rgba(118,75,162,0.12) 100%);
+}
+.overlay-panel h1 {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.3em;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  margin-bottom: 12px;
+  color: #fff;
+  text-shadow: 0 2px 16px rgba(66,185,131,0.18), 0 1px 0 #222;
+  white-space: nowrap;
+  gap: 0.5em;
+}
+.overlay-panel h2, .overlay-panel h3 {
+  color: #fff;
+  text-shadow: 0 1px 8px rgba(66,185,131,0.12);
+}
+.overlay-panel .control-panel, .overlay-panel .menu, .overlay-panel .game-results {
+  background: rgba(0,0,0,0.18);
+  border-radius: 14px;
+  padding: 12px 6px 12px 6px;
+  margin-bottom: 12px;
+  box-shadow: 0 2px 12px rgba(66,185,131,0.10);
+  width: 100%;
+  max-width: 340px;
+  margin-left: auto;
+  margin-right: auto;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  overflow-x: auto;
+  word-break: break-word;
+  font-size: 0.98em;
+}
+.overlay-panel input, .overlay-panel button, .overlay-panel .start-button, .overlay-panel .play-button, .overlay-panel .pause-button {
+  font-size: 0.98em;
+  border-radius: 7px;
+}
+.overlay-panel .start-button, .overlay-panel .play-button, .overlay-panel .pause-button {
+  display: block;
+  margin: 12px auto 0 auto;
+  padding: 10px 18px;
+}
+.overlay-panel .level-buttons {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  gap: 7px;
+}
+.overlay-panel .level-info, .overlay-panel .stats, .overlay-panel .high-scores {
+  background: rgba(255,255,255,0.10);
+  border-radius: 9px;
+  padding: 7px 4px;
+  margin: 7px auto;
+  text-align: center;
+  width: 100%;
+  max-width: 260px;
+  font-size: 0.95em;
+}
+.overlay-panel .result-message {
+  font-size: 1.3em;
+  font-weight: bold;
+  color: #FFD700;
+  text-shadow: 0 1px 8px rgba(66,185,131,0.12);
+}
+.overlay-panel .audio-player {
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+.overlay-panel .bpm-info {
+  word-break: break-all;
+  white-space: normal;
+  max-width: 100%;
+  overflow-wrap: break-word;
+  text-align: center;
+  margin: 8px auto 0 auto;
+  padding: 0 8px;
+  display: block;
+}
+.overlay-panel .audio-controls {
+  width: 100%;
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+/* audioをUIから非表示にする */
+.hidden-audio {
+  display: none !important;
+}
+.overlay-panel .game-results {
+  background: rgba(255,255,255,0.97);
+  border-radius: 14px;
+  box-shadow: 0 4px 16px rgba(66,185,131,0.13);
+  border: 1.5px solid rgba(66,185,131,0.12);
+  padding: 12px 2vw 36px 2vw;
+  margin-bottom: 0;
+  width: 98vw;
+  max-width: 520px;
+  min-width: 320px;
+  margin-left: auto;
+  margin-right: auto;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  position: relative;
+  backdrop-filter: blur(5px) saturate(102%);
+  min-height: 0;
+  box-sizing: border-box;
+  font-size: 0.92em;
+}
+.overlay-panel .game-results,
+.overlay-panel .game-results * {
+  color: #222 !important;
+}
+.overlay-panel .game-results .result-message {
+  color: #ff9800 !important;
+  background: #fff3e0;
+  border-radius: 4px;
+  padding: 2px 0;
+  font-size: 1.1em;
+  font-weight: bold;
+  margin: 2px 0 4px 0;
+}
+.overlay-panel .game-results .highlight-score {
+  color: #FFD700 !important;
+}
+.overlay-panel .game-results .highlight-combo {
+  color: #42b983 !important;
+}
+/* ハイスコアテーブル用スタイル */
+.score-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 8px;
+  background: rgba(255,255,255,0.95);
+  border-radius: 8px;
+  overflow: hidden;
+  font-size: 1em;
+}
+.score-table th, .score-table td {
+  padding: 6px 4px;
+  border: 1px solid #e0e0e0;
+  text-align: center;
+}
+.score-table th {
+  background: #42b983;
+  color: #fff;
+  font-weight: bold;
+}
+.score-table tr:nth-child(even) td {
+  background: #f7faf7;
+}
+.score-table .rank {
+  font-weight: bold;
+  color: #42b983;
+}
+.score-table .score {
+  font-weight: bold;
+  color: #FFD700;
+}
+.score-table .level {
+  color: #764ba2;
+}
+.score-table .combo {
+  color: #ff9800;
+}
+.score-table .date {
+  color: #888;
+}
+.overlay-panel .game-results h2 {
+  color: #2196f3;
+  background: #e3f2fd;
+  border-radius: 6px;
+  padding: 2px 0;
+  font-size: 1.3em;
+  font-weight: bold;
+  margin-bottom: 6px;
+}
+.overlay-panel .game-results .summary-text {
+  color: #333;
+  background: #f5f5f5;
+  border-radius: 4px;
+  padding: 2px 0;
+  font-weight: bold;
+  font-size: 1.05em;
+  margin: 2px 0;
+}
+.overlay-panel .game-results .start-button {
+  width: 100%;
+  max-width: 320px;
+  font-size: 1.05em;
+  padding: 10px 0;
+  border-radius: 7px;
+  margin: 32px auto 0 auto;
+  display: block;
+  box-shadow: 0 2px 8px rgba(66,185,131,0.10);
+}
+.overlay-panel .game-results .high-scores, .overlay-panel .game-results .stats {
+  max-width: 440px;
+  font-size: 0.92em;
+}
+.overlay-panel .game-results .score-table {
+  font-size: 0.9em;
+}
+.overlay-panel .game-results .score-table th, .overlay-panel .game-results .score-table td {
+  font-size: 0.9em;
+}
+.overlay-panel .game-results .start-button {
+  max-width: 400px;
+  font-size: 0.95em;
+}
 </style>
