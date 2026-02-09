@@ -1,30 +1,73 @@
-# mediapipe-app
+# Rhythm Game (MediaPipe x MusicGen)
 
-This template should help get you started developing with Vue 3 in Vite.
+**カメラの前で身体を動かすだけで遊べる、姿勢推定ベースのリズムゲーム。**  
+MediaPipeのPose Landmarkerで動きを検出し、生成BGMのBPMに合わせて的を出現させる“踊れる”ミニゲームです。
 
-## Recommended IDE Setup
+---
 
-[VSCode](https://code.visualstudio.com/) + [Volar](https://marketplace.visualstudio.com/items?itemName=Vue.volar) (and disable Vetur).
+## 何ができる？
+- **ハンズフリーでプレイ**：カメラ入力のみで操作  
+- **リアルタイム姿勢推定**：MediaPipe Pose Landmarker  
+- **BGM生成＋BPM同期**：MusicGenで曲を作り、ビートに合わせてゲーム進行  
+- **スコア/コンボ/リザルト**：ハイスコア保存・統計表示
 
-## Customize configuration
+---
 
-See [Vite Configuration Reference](https://vite.dev/config/).
+## デモの流れ
+1. ブラウザでカメラ許可  
+2. BGMを生成（任意）  
+3. 的に身体を合わせてヒット  
+4. リザルトでスコア確認
 
-## Project Setup
+---
 
+## 技術スタック
+- **Frontend**: Vue 3 + Vite  
+- **Vision**: `@mediapipe/tasks-vision`  
+- **Backend**: FastAPI + MusicGen + librosa  
+
+---
+
+## セットアップ（フロント）
 ```sh
 npm install
-```
-
-### Compile and Hot-Reload for Development
-
-```sh
 npm run dev
 ```
 
-### Compile and Minify for Production
+---
 
+## セットアップ（バックエンド）
 ```sh
-npm run build
+cd backend
+pip install -r requirements.txt
+python main.py
 ```
-# rhythm-game
+
+---
+
+## Docker起動（GPU推奨）
+```sh
+docker compose up --build
+```
+
+---
+
+## 動作環境/注意点
+- ブラウザで**カメラのアクセス許可**が必要  
+- BGM生成は**GPUがあると高速**（CPUでも動作可能だが時間がかかる）  
+- 想定URL:  
+  - フロント: `http://localhost:5173`  
+  - API: `http://localhost:8000`  
+
+---
+
+## 主要ファイル
+- `src/App.vue`：ゲームロジックと描画の中核  
+- `backend/main.py`：BGM生成APIと音声配信  
+
+---
+
+## 開発メモ（必要に応じて追記）
+- スコア/統計は `localStorage` に保存  
+- BPMは生成したWAVを解析して算出  
+

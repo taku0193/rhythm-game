@@ -895,7 +895,7 @@ function goHome() {
         class="overlay-panel"
         v-if="!isGameActive && !showGameResults"
       >
-        <h1>🎯 Rhythm Game</h1>
+        <h1>🎯 AI Rhythmix</h1>
         <div v-if="isLoading" class="loading">{{ feedbackText }}</div>
         <div v-if="!isLoading" class="control-panel">
           <h3>BGM生成 (AI)</h3>
@@ -945,7 +945,7 @@ function goHome() {
         </div>
       </div>
       <div v-if="showGameResults" class="overlay-panel">
-        <h1>🎯 Rhythm Game</h1>
+        <h1>🎯 AI Rhythmix</h1>
         <div class="game-results">
           <h2>ゲーム結果</h2>
           <p class="result-message">{{ gameResultText }}</p>
