@@ -1,21 +1,15 @@
-# PyTorchの追加ダウンロード場所を指定（標準リポジトリも参照するように --extra を付ける）
---extra-index-url https://download.pytorch.org/whl/cu121
-
-# PyTorch関連ライブラリ（利用可能な最新安定版に固定）
-torch==2.5.1
-torchvision
-torchaudio
+# PyTorch関連はCUDA wheelとの整合性を保つためDockerfileで固定する
 
 # Hugging Face関連ライブラリ（PyTorch 2.5系と互換性のあるバージョンに固定）
 transformers[sentencepiece]==4.41.2
-accelerate
+accelerate==1.14.0
 
 # 音声処理関連ライブラリ
-soundfile
-librosa
-scipy
+soundfile==0.14.0
+librosa==0.11.0
+scipy==1.15.3
 
 # Webフレームワーク関連ライブラリ
-fastapi
-uvicorn[standard]
-python-multipart
+fastapi==0.140.2
+uvicorn[standard]==0.51.0
+python-multipart==0.0.32

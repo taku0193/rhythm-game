@@ -1,7 +1,5 @@
 # docker-compose.yml (network_mode: "host" を使用する構成)
 
-version: '3.8'
-
 services:
   # --- フロントエンドサービス ---
   frontend:
@@ -9,13 +7,17 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: vue_mediapipe_frontend
-    # network_mode: "host" を使用するため、ports設定は不要
+    # hostネットワークへ直接5173を公開する
     network_mode: "host"
+    command: npm run dev
     volumes:
       - .:/app
-      - /app/node_modules
-    depends_on:
-      - backend
+      - frontend_node_modules:/app/node_modules
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:5173/').then(response => { if (!response.ok) process.exit(1) }).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   # --- バックエンドサービス ---
   backend:
@@ -25,8 +27,17 @@ services:
     container_name: musicgen_backend
     # こちらも network_mode: "host" を使用するため、ports設定は不要
     network_mode: "host"
+    environment:
+      HF_HOME: /cache/huggingface
     volumes:
       - ./backend:/app
+      - huggingface_cache:/cache/huggingface
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import json, urllib.request; data = json.load(urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=5)); assert data == {'service': 'musicgen', 'status': 'ok'}"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10m
     # GPUを利用するための設定
     deploy:
       resources:
@@ -35,3 +46,9 @@ services:
             - driver: nvidia
               count: 1
               capabilities: [gpu]
+
+volumes:
+  frontend_node_modules:
+  huggingface_cache:
+    external: true
+    name: rhythm-game_huggingface_cache

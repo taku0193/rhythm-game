@@ -1,0 +1,11 @@
+.git
+.agents
+.codex
+.vscode
+backend
+coverage
+dist
+node_modules
+*.log
+*.local
+*~

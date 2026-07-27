@@ -65,7 +65,7 @@ MediaPipeのPose Landmarkerで動きを検出し、生成BGMのBPMに合わせ�
 
 ## 🛠️ セットアップ（フロント）
 ```sh
-npm install
+npm ci
 npm run dev
 ```
 
@@ -74,15 +74,35 @@ npm run dev
 ## 🧪 セットアップ（バックエンド）
 ```sh
 cd backend
-pip install -r requirements.txt
-python main.py
+python3 -m pip install \
+  torch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1 \
+  --index-url https://download.pytorch.org/whl/cu121
+python3 -m pip install -r requirements.txt
+python3 main.py
 ```
 
 ---
 
 ## 🐳 Docker起動（GPU推奨）
 ```sh
-docker compose up --build
+docker volume create rhythm-game_huggingface_cache
+docker compose up --build --force-recreate -d
+docker compose ps
+curl http://127.0.0.1:5173/
+curl http://127.0.0.1:5173/api/healthz
+```
+
+初回のみMusicGenモデルの取得とロードに数分かかります。モデルはDockerの
+`huggingface_cache` volumeへ保存されるため、コンテナ再作成後も再利用されます。
+
+この環境ではDocker bridgeのポート転送を使わず、Linuxのhost networkで
+5173（フロント）と8000（API）を公開します。そのため`docker compose ps`の
+`PORTS`欄が空でも正常です。
+
+MacからSSH転送する場合は、ViteのAPI proxyを通すため5173だけを転送します。
+
+```sh
+ssh -N -L 5173:127.0.0.1:5173 <user>@<lacar-host>
 ```
 
 ---
@@ -92,7 +112,7 @@ docker compose up --build
 - BGM生成は**GPUがあると高速**（CPUでも動作可能だが時間がかかる）  
 - 想定URL:  
   - フロント: `http://localhost:5173`  
-  - API: `http://localhost:8000`  
+  - APIヘルスチェック: `http://localhost:5173/api/healthz`
 
 ---
 

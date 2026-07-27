@@ -1,5 +1,5 @@
 # ベースとなるNode.jsイメージを指定
-FROM node:18-alpine
+FROM node:22-alpine
 
 # コンテナ内の作業ディレクトリを作成
 WORKDIR /app
@@ -7,8 +7,8 @@ WORKDIR /app
 # package.jsonとpackage-lock.jsonをコピー
 COPY package*.json ./
 
-# 依存関係をインストール
-RUN npm install
+# lockfileどおりに依存関係をインストール
+RUN npm ci
 
 # プロジェクトの全てのファイルをコピー
 COPY . .
@@ -17,5 +17,5 @@ COPY . .
 EXPOSE 5173
 
 # 開発サーバーを起動
-# --host 0.0.0.0 を指定することで、コンテナ外からアクセス可能にする
-CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
+# host、port、strictPortはvite.config.jsで一元管理する
+CMD ["npm", "run", "dev"]

@@ -1,0 +1,6 @@
+__pycache__
+.cache
+.venv
+static/audio/generated_*.wav
+*.log
+*.py[cod]

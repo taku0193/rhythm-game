@@ -1,53 +1,62 @@
 import torch
 from transformers import AutoProcessor, MusicgenForConditionalGeneration
 import scipy.io.wavfile
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 import uvicorn
 import os
 import uuid
-from fastapi.middleware.cors import CORSMiddleware
 import librosa
 
 # --- 初期設定 ---
 app = FastAPI()
-origins = ["http://localhost:5173"]
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-os.makedirs("static/audio", exist_ok=True)
+AUDIO_DIRECTORY = os.path.abspath("static/audio")
+os.makedirs(AUDIO_DIRECTORY, exist_ok=True)
 app.mount("/static", StaticFiles(directory="static"), name="static")
+
+
+def get_audio_path(filename: str) -> str:
+    if os.path.basename(filename) != filename or not filename.endswith(".wav"):
+        raise HTTPException(status_code=400, detail="Invalid audio filename")
+    return os.path.join(AUDIO_DIRECTORY, filename)
 
 # --- モデルのロード ---
 print("モデルをロードしています... これには数分かかることがあります。")
 device = "cuda" if torch.cuda.is_available() else "cpu"
 print(f"使用するデバイス: {device}")
 
-# ▼▼▼ モデル名を 'large' に戻す ▼▼▼
-processor = AutoProcessor.from_pretrained("facebook/musicgen-large")
+model_name = "facebook/musicgen-large"
+model_revision = "15ccdc92099879e47b6da12c350cdb71d4eab3ca"
+processor = AutoProcessor.from_pretrained(
+    model_name,
+    revision=model_revision,
+)
 model = MusicgenForConditionalGeneration.from_pretrained(
-    "facebook/musicgen-large",
+    model_name,
+    revision=model_revision,
     attn_implementation="eager"
 ).to(device)
 
 print("モデルのロードが完了しました。")
 
+
+@app.get("/healthz")
+async def healthz():
+    return {"service": "musicgen", "status": "ok"}
+
+
 # --- APIリクエストのデータ形式 ---
 class MusicPrompt(BaseModel):
     prompt: str
-    duration: int = 15
+    duration: int = Field(default=15, ge=1, le=30)
 
 # --- BGM生成APIのエンドポイント ---
 @app.post("/generate-bgm")
-async def generate_bgm(music_prompt: MusicPrompt, request: Request):
+async def generate_bgm(music_prompt: MusicPrompt):
     try:
-        safe_duration = min(music_prompt.duration, 30)
+        safe_duration = music_prompt.duration
         print(f"BGM生成リクエストを受信: prompt='{music_prompt.prompt}', duration={safe_duration}s (リクエスト: {music_prompt.duration}s)")
         
         inputs = processor(
@@ -64,7 +73,7 @@ async def generate_bgm(music_prompt: MusicPrompt, request: Request):
         sampling_rate = model.config.audio_encoder.sampling_rate
         unique_id = uuid.uuid4()
         output_filename = f"generated_{unique_id}.wav"
-        output_path = os.path.join("static/audio", output_filename)
+        output_path = get_audio_path(output_filename)
         
         scipy.io.wavfile.write(output_path, rate=sampling_rate, data=audio_values[0, 0].cpu().numpy())
         print(f"ファイルを保存しました: {output_path}")
@@ -83,9 +92,8 @@ async def generate_bgm(music_prompt: MusicPrompt, request: Request):
         
         print(f"解析されたBPM: {bpm}")
 
-        # URL生成を修正 - 専用の音声配信エンドポイントを使用
-        base_url = str(request.base_url).rstrip('/')
-        file_url = f"{base_url}/audio/{output_filename}"
+        # ブラウザ側でViteの /api プロキシを通せるよう相対パスを返す
+        file_url = f"/audio/{output_filename}"
         
         print(f"生成されたURL: {file_url}")
         
@@ -98,7 +106,7 @@ async def generate_bgm(music_prompt: MusicPrompt, request: Request):
 # --- 音声ファイル確認用エンドポイント ---
 @app.get("/check-audio/{filename}")
 async def check_audio(filename: str):
-    file_path = os.path.join("static/audio", filename)
+    file_path = get_audio_path(filename)
     if os.path.exists(file_path):
         file_size = os.path.getsize(file_path)
         return {"exists": True, "size": file_size, "path": file_path}
@@ -108,7 +116,7 @@ async def check_audio(filename: str):
 # --- 音声ファイル配信用エンドポイント ---
 @app.get("/audio/{filename}")
 async def get_audio(filename: str, request: Request):
-    file_path = os.path.join("static/audio", filename)
+    file_path = get_audio_path(filename)
     if os.path.exists(file_path):
         # 適切なヘッダーを設定
         headers = {
@@ -155,12 +163,12 @@ async def get_audio(filename: str, request: Request):
             headers=headers
         )
     else:
-        return {"error": "File not found"}, 404
+        raise HTTPException(status_code=404, detail="File not found")
 
 # --- 音声ファイルテスト用エンドポイント ---
 @app.get("/test-audio/{filename}")
 async def test_audio(filename: str):
-    file_path = os.path.join("static/audio", filename)
+    file_path = get_audio_path(filename)
     if os.path.exists(file_path):
         file_size = os.path.getsize(file_path)
         

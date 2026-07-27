@@ -51,6 +51,12 @@ const isGenerating = ref(false);
 const bgmUrl = ref('');
 const errorMessage = ref('');
 const currentBpm = ref(null);
+const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/+$/, '');
+
+function apiUrl(path) {
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+  return `${apiBaseUrl}${normalizedPath}`;
+}
 
 // === 音響効果 ===
 const audioContext = ref(null);
@@ -170,7 +176,7 @@ onMounted(async () => {
 // --- MediaPipe初期化 ---
 async function createPoseLandmarker() {
   try {
-    const vision = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm");
+    const vision = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm");
     poseLandmarker = await PoseLandmarker.createFromOptions(vision, {
       baseOptions: {
         modelAssetPath: `https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task`,
@@ -424,10 +430,10 @@ async function handleGenerateBgm() {
   bgmUrl.value = '';
   try {
     console.log('BGM生成リクエストを送信中...');
-    const response = await fetch('http://localhost:8000/generate-bgm', {
+    const response = await fetch(apiUrl('/generate-bgm'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt: musicPrompt.value, duration: 60 }) // 60秒生成
+      body: JSON.stringify({ prompt: musicPrompt.value, duration: 30 })
     });
     
     console.log('レスポンス受信:', response.status, response.statusText);
@@ -442,14 +448,15 @@ async function handleGenerateBgm() {
     console.log('レスポンスデータ:', data);
     
     if (data.success) {
-      bgmUrl.value = data.url;
+      const audioPath = new URL(data.url, window.location.origin).pathname;
+      bgmUrl.value = apiUrl(audioPath);
       currentBpm.value = data.bpm;
       console.log('BGM URL設定:', bgmUrl.value);
       
       // 音声ファイルの存在確認
-      const filename = bgmUrl.value.split('/').pop();
+      const filename = audioPath.split('/').pop();
       try {
-        const checkResponse = await fetch(`http://localhost:8000/check-audio/${filename}`);
+        const checkResponse = await fetch(apiUrl(`/check-audio/${encodeURIComponent(filename)}`));
         const checkData = await checkResponse.json();
         console.log('音声ファイル確認結果:', checkData);
         if (!checkData.exists) {
@@ -465,7 +472,7 @@ async function handleGenerateBgm() {
           
           // WAVファイルの詳細テスト
           try {
-            const testResponse = await fetch(`http://localhost:8000/test-audio/${filename}`);
+            const testResponse = await fetch(apiUrl(`/test-audio/${encodeURIComponent(filename)}`));
             const testData = await testResponse.json();
             console.log('WAVファイル詳細テスト:', testData);
             if (!testData.is_valid_wav) {
@@ -988,4 +995,3 @@ function goHome() {
     </div>
   </div>
 </template>
-
